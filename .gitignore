@@ -1,0 +1,34 @@
+# Python virtual environment
+venv/
+env/
+ENV/
+.env
+.venv/
+.python-version
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Temporary audio files that might be created during testing
+*.wav
+*.mp3
+
+# Piper TTS models (can be large)
+*.onnx
+*.onnx.json
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
