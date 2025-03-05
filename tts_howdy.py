@@ -21,7 +21,7 @@ try:
 except (ImportError, OSError) as e:
     print(f"Warning: Audio playback via sounddevice might not work: {e}")
     print("You may need to install PortAudio and its development headers.")
-    print("On Raspberry Pi: sudo apt-get install libportaudio2 libportaudio-dev python3-dev")
+    print("On Raspberry Pi: sudo apt-get install portaudio19-dev python3-dev")
     print("After installing dependencies, reinstall sounddevice: pip install sounddevice --upgrade")
     SOUNDDEVICE_AVAILABLE = False
     # Import numpy only if needed for other parts of the code
@@ -310,14 +310,16 @@ def main():
             if result.returncode != 0:
                 missing.append("alsa-utils")
             
-            # Check for PortAudio
+            # Check for PortAudio - Raspberry Pi uses different package names
             if not os.path.exists("/usr/lib/libportaudio.so") and not os.path.exists("/usr/lib/arm-linux-gnueabihf/libportaudio.so"):
-                missing.append("libportaudio2 libportaudio-dev")
+                missing.append("portaudio19-dev")
             
             if missing:
                 print(f"Missing dependencies: {', '.join(missing)}")
                 print("\nYou can install them with:")
                 print(f"sudo apt-get update && sudo apt-get install -y {' '.join(missing)} python3-dev")
+                print("\nFor audio output, you may also need:")
+                print("sudo apt-get install -y pulseaudio alsa-utils")
                 print("\nAfter installing, reinstall Python dependencies:")
                 print("pip install -r requirements.txt --upgrade")
             else:
