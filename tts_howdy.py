@@ -11,9 +11,25 @@ import subprocess
 import sys
 import os
 import tempfile
-import sounddevice as sd
-import numpy as np
 import time
+
+# Try to import sounddevice, but handle it gracefully if it's missing or PortAudio isn't installed
+try:
+    import sounddevice as sd
+    import numpy as np
+    SOUNDDEVICE_AVAILABLE = True
+except (ImportError, OSError) as e:
+    print(f"Warning: Audio playback via sounddevice might not work: {e}")
+    print("You may need to install PortAudio and its development headers.")
+    print("On Raspberry Pi: sudo apt-get install libportaudio2 libportaudio-dev python3-dev")
+    print("After installing dependencies, reinstall sounddevice: pip install sounddevice --upgrade")
+    SOUNDDEVICE_AVAILABLE = False
+    # Import numpy only if needed for other parts of the code
+    try:
+        import numpy as np
+    except ImportError:
+        pass
+
 
 class PiperTTSHowdy:
     def __init__(self, ollama_host="http://localhost:11434", model="tiny-cowboy", 
@@ -155,30 +171,54 @@ class PiperTTSHowdy:
                 return
             
             # Play the generated audio
-            try:
-                import wave
-                with wave.open(temp_filename, 'rb') as wf:
-                    # Extract audio data
-                    audio_data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
-                    sample_rate = wf.getframerate()
-                    
-                    # Play audio
-                    sd.play(audio_data, sample_rate)
-                    sd.wait()  # Wait until audio is finished playing
-            except Exception as e:
-                print(f"Error playing audio: {e}")
-                # Fallback to system player if sounddevice fails
+            audio_played = False
+            
+            # Try using sounddevice if available
+            if SOUNDDEVICE_AVAILABLE:
+                try:
+                    import wave
+                    with wave.open(temp_filename, 'rb') as wf:
+                        # Extract audio data
+                        audio_data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                        sample_rate = wf.getframerate()
+                        
+                        # Play audio
+                        sd.play(audio_data, sample_rate)
+                        sd.wait()  # Wait until audio is finished playing
+                    audio_played = True
+                except Exception as e:
+                    print(f"Error playing audio with sounddevice: {e}")
+            
+            # Fallback to system player if sounddevice fails or is not available
+            if not audio_played:
                 try:
                     if sys.platform == "darwin":  # macOS
                         subprocess.run(["afplay", temp_filename])
+                        audio_played = True
                     elif sys.platform == "linux":  # Linux/Raspberry Pi
-                        subprocess.run(["aplay", temp_filename])
+                        result = subprocess.run(["aplay", "--version"], capture_output=True, text=True, check=False)
+                        if result.returncode == 0:
+                            subprocess.run(["aplay", temp_filename])
+                            audio_played = True
+                        else:
+                            result = subprocess.run(["paplay", "--version"], capture_output=True, text=True, check=False)
+                            if result.returncode == 0:
+                                subprocess.run(["paplay", temp_filename])
+                                audio_played = True
                     elif sys.platform == "win32":  # Windows
                         subprocess.run(["start", temp_filename], shell=True)
+                        audio_played = True
                 except Exception as e2:
                     print(f"Error playing audio with system player: {e2}")
             
-            # Clean up temporary file
+            # Inform if no audio could be played
+            if not audio_played:
+                print("\nWARNING: Could not play audio. Make sure audio devices are properly configured.")
+                print("Audio was generated successfully and saved to:", temp_filename)
+                print("Audio file was not deleted for manual playback.")
+                return
+            
+            # Clean up temporary file if audio played successfully
             try:
                 os.unlink(temp_filename)
             except:
@@ -249,8 +289,46 @@ def main():
     parser.add_argument('--text', '-t', help='Speak provided text directly without calling Ollama')
     parser.add_argument('--stdin', action='store_true',
                         help='Read text from stdin and speak it')
+    parser.add_argument('--check-dependencies', action='store_true',
+                        help='Check and install required system dependencies')
     
     args = parser.parse_args()
+    
+    # Check dependencies if requested
+    if args.check_dependencies:
+        print("Checking system dependencies...")
+        if sys.platform == "linux":  # Linux/Raspberry Pi
+            missing = []
+            
+            # Check for Piper
+            result = subprocess.run(["which", "piper"], capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                missing.append("piper-tts")
+            
+            # Check for audio playback tools
+            result = subprocess.run(["which", "aplay"], capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                missing.append("alsa-utils")
+            
+            # Check for PortAudio
+            if not os.path.exists("/usr/lib/libportaudio.so") and not os.path.exists("/usr/lib/arm-linux-gnueabihf/libportaudio.so"):
+                missing.append("libportaudio2 libportaudio-dev")
+            
+            if missing:
+                print(f"Missing dependencies: {', '.join(missing)}")
+                print("\nYou can install them with:")
+                print(f"sudo apt-get update && sudo apt-get install -y {' '.join(missing)} python3-dev")
+                print("\nAfter installing, reinstall Python dependencies:")
+                print("pip install -r requirements.txt --upgrade")
+            else:
+                print("All system dependencies are installed!")
+        elif sys.platform == "darwin":  # macOS
+            print("On macOS, ensure you have:")
+            print("- Homebrew: https://brew.sh/")
+            print("- PortAudio: brew install portaudio")
+            print("- Piper TTS: Follow instructions at https://github.com/rhasspy/piper")
+        print("\nAfter ensuring all dependencies are installed, run the program again without --check-dependencies")
+        return
     
     # Initialize the TTS Howdy instance
     tts = PiperTTSHowdy(
